@@ -1,0 +1,234 @@
+---
+title: "Untitled"
+runtime: shiny
+output: 
+  flexdashboard::flex_dashboard:
+    orientation: rows
+    vertical_layout: scroll
+    theme: cosmo
+---
+
+```{r setup, include=FALSE}
+library(flexdashboard)
+library(readxl)
+library(tidyverse)
+library(formattable)
+library(highcharter)
+library(lubridate)
+library(ggplot2)
+library(reshape)
+library(shiny)
+library(plotly)
+library(ggcorrplot)
+library(psych)
+library(tidyr)
+library(corrplot)
+library(rhandsontable)
+library(knitr)
+library(kableExtra)
+library(RGraphics)
+library(grid)
+library(gridExtra) 
+library(data.table)
+library(dplyr)
+library(cowplot)
+library(ggfortify)
+library(shinydashboard)
+library(forecast)
+library(zoo)
+```
+
+```{r}
+Copy_of_3_QA_Case_Study <- read_excel("D:/Hudson/Copy of #3 QA Case Study.xlsx", sheet = "Sample Data")
+q3 <- Copy_of_3_QA_Case_Study
+q3 <- as.data.frame(q3)
+colnames(q3) <- gsub(" ","_",colnames(q3))
+q3$rev_per_events <- q3$Revenue/q3$Events
+q3$Marketing_Channel <- as.factor(q3$Marketing_Channel)
+q3$Comments <- as.factor(q3$Comments)
+
+Copy_of_2_Promo_Results <- read_excel("D:/Hudson/Copy of #2 Promo Results.xlsx", sheet = "Data V2")
+promo <- Copy_of_2_Promo_Results
+promo <- as.data.frame(promo)
+colnames(promo) <- gsub(" ","_",colnames(promo))
+promo <- promo %>%
+  mutate(Month1 = format(Date, "%b"))
+promo$Month <-factor(promo$Month, 
+                     levels = c("Jan", "Feb", "Mar", "Apr", "May", "Jun",
+                                "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"))
+promo$TS_per_TO <- promo$Total_sales/promo$Total_Orders
+promo$PS_per_PO <- promo$Sales_Through_promotions/promo$Orders_through_promotions
+promo$Promotions <- as.factor(promo$Promotions)
+promo$Given_data <- ifelse(promo$Promotions == "November Double Points Event  and Free Shipping (on orders of $150+)" | promo$Promotions == "December EGC Event - Day 1 and Free Shipping (on orders of $150+)","Yes","No")
+SOP <- promo[c(1:3,5,9,10,11,12)]
+SOP$Month1 <- NULL
+SOP1 <- melt(SOP,id=c("Date","Year","Month","Promotions","Given_data"))
+promo_summary <- promo %>% group_by(Year,Promotions) %>% summarise(Total_Sales = sum(Total_sales),Total_Orders = sum(Total_Orders),Sales_Through_promotions = sum(Sales_Through_promotions),Orders_through_promotions = sum(Orders_through_promotions))
+promo_summary <- as.data.frame(promo_summary)
+promo_summary$sales_percentage_Promotions <- round((promo_summary$Sales_Through_promotions/promo_summary$Total_Sales)*100)
+promo_summary$order_percentage_Promotions <- round((promo_summary$Orders_through_promotions/promo_summary$Total_Orders)*100)
+
+as <- read_excel("D:/Hudson/Copy of #3 QA Case Study.xlsx", sheet = "Sheet6")
+as <- as.data.frame(as)
+colnames(as) <- gsub(" ","_",colnames(as))
+colnames(as) <- gsub("-","_",colnames(as))
+as1 <- as %>% mutate(Channel_A_CL = color_bar("lightgreen")(round(Channel_A_CL*100,2)),Channel_B_CL = color_bar("lightgreen")(round(Channel_B_CL*100,2))) %>% select(everything()) %>% kable(escape = F,caption = "Title") %>% kable_styling("hover", full_width = F)
+```
+
+PROMO RECAP
+=================
+
+Inputs {.sidebar}
+-----------------------------------------------------------------------
+```{r}
+    selectInput("Q","Study",choices = c("","Trend","Bar Plot"))
+    output$filter1 <- renderUI({
+      if(input$Q == "Trend"){
+        label = "KPI"
+        radioButtons("KPI", label, choices = c("Total Sales/Total Order","Promo Sales/Promo Order","Both"),selected = NULL, inline = FALSE)
+      } else if(input$Q == "Bar Plot"){
+        label = "Sales and Order"
+        radioButtons("KPI1", label, choices = c("Sales through promotions","Order through promotions"),selected = NULL, inline = FALSE)
+      }
+    })
+    uiOutput("filter1")
+```
+
+Column {data-width=650}
+-----------------------------------------------------------------------
+
+### Plots
+
+```{r}
+output$g1 <- renderPlotly({
+  if (input$Q == "Trend" && (input$KPI  == "Total Sales/Total Order" | input$KPI  == "Promo Sales/Promo Order")){
+    plotdata <- promo
+  }
+  if (input$Q == "Trend" && input$KPI  == "Both"){
+    plotdata1 <- SOP1
+  }
+  if (input$Q == "Bar Plot" && (input$KPI1  == "Sales through promotions" | input$KPI1  == "Order through promotions")){
+    plotdata2 <- promo_summary
+  }
+  if (input$Q == "Trend" && input$KPI == "Total Sales/Total Order"){
+    ggplotly(ggplot(data = plotdata , aes(x=Date,y=TS_per_TO))+geom_line(size=0.2)+theme(legend.position = "none")+geom_point(data = plotdata %>% filter(Given_data == "Yes"),aes(x=Date,y=TS_per_TO),color ='red',size=0.3))
+  } else if (input$Q == "Trend" && input$KPI == "Promo Sales/Promo Order"){
+    ggplotly(ggplot(data = plotdata , aes(x=Date,y=PS_per_PO))+geom_line(size=0.2)+theme(legend.position = "none")+geom_point(data = plotdata %>% filter(Given_data == "Yes"),aes(x=Date,y=PS_per_PO),color ='red',size=0.3))
+  } else if (input$Q == "Trend" && input$KPI == "Both"){
+    ggplotly(ggplot(data = plotdata1 , aes(x=Date,y=value,color=variable))+geom_line(size=0.2)+theme(legend.position = "none")+geom_point(data = plotdata1 %>% filter(Given_data == "Yes"),aes(x=Date,y=value,fill=variable),color ='red',size=0.3))
+  } else if (input$Q == "Bar Plot" && input$KPI1  == "Sales through promotions"){
+    ggplotly(ggplot(data = plotdata2,aes(x=Promotions,y=sales_percentage_Promotions,fill=Year))+geom_bar(position = "dodge",stat = "identity")+theme(legend.position = "none")+theme(axis.text.x=element_text(angle=0, hjust=0.5,size = 8)))
+  } else if (input$Q == "Bar Plot" && input$KPI1  == "Order through promotions"){
+    ggplotly(ggplot(data = plotdata2,aes(x=Promotions,y=order_percentage_Promotions,fill=Year))+geom_bar(position = "dodge",stat = "identity")+theme(legend.position = "none")+theme(axis.text.x=element_text(angle=0, hjust=0.5,size = 8)))
+  } 
+})
+plotlyOutput("g1")
+```
+
+Column {data-height=700}
+-----------------------------------------------------------------------
+
+### Assumptions, Insights and Recommendations
+
+```{r}
+output$t2 <- renderUI({
+  HTML(paste("Assumptions",hr(),
+        "1) The sales and order are split across each day since there is only limited information (only Total sales, Novembeer sales and December 1st sales) and also for the purpose of plotting trend",
+        
+        "2) The promotions are started in 2006 and continued in 2007 as well. In other words, before 2006 there were no promotions done and customers were not aware of this before",
+        
+        "3) There is no promotional activities in between January and November other than Free shipping",
+            
+            hr(),
+        
+        "Insights",hr(),
+        "1) In 2006, TS/TO remained stable till November and spiked up on December 1 to 548 from 394 in November (raise by 39%) . Possibly it might due to year end sales. But, PS/PO also spiked both in November 547 from 227 (raise by 141%) and in December 1st to 1072 from 547 in November (raise by 96%) respectively. Huge raise in November is due to the launch of BONUS DOUBLE POINTS for the first time. But customer did not expect that there would be an EGC event on December 1st and hence they have utlised DOUBLE POINTS sale as much as possible",
+        
+        "2) In 2007, TS/TO went down in November to 381 from 419 (down by 9%) and went up again in December to 461 (raise by 21%).  However, the PS/PO got spiked up both in November to 498 from 341 (raise by 46%) and in December to 1066 from 498 (raise by 114%) respectively. Low raise in November is due to the percenption that there would be an EGC event on December 1st and waiting for the event. Also I strongly feel that there are customers who feel that there is not going to be EGC event on December 1st and hence would have purcashed in November it self and hence Sales through promotions in November is more in 2007 compared to 2006",
+    
+        "3) On Dec 1st, 2007, the sales through promotions did not go well as compared to Dec 1st, 2006. Reason might be Dec 1st, 2007 was a weekend and customers would have gone for a vacation. Nature of the day matters a lot ",
+        
+        hr(),
+        
+        "Recommendations",hr(),
+        "1) Understanding customer behaviour is very important. Having promotional activites only at limited time or during festival reasons will not help much in drving the decisions. There is a need to compare how customers behave at different times",sep="<br/>"))
+})
+htmlOutput("t2")
+```
+
+Marketing Attribution Model
+=================
+
+Inputs {.sidebar}
+-----------------------------------------------------------------------
+```{r}
+    selectInput("Q3","Study",choices = c("","Marketing Channel"))
+
+    output$filter4 <- renderUI({
+      if(input$Q3 == "Marketing Channel"){
+        label = "Channels"
+        selectInput("C", label, choices = c(levels(factor(q3$Marketing_Channel)),"All"),selected = "All")
+      } 
+    })
+    uiOutput("filter4")
+    
+     output$filter3 <- renderUI({
+      if(input$Q3 == "Marketing Channel"){
+        label = "KPI"
+        radioButtons("KPI21", label, choices = c("Revenue","Events","rev_per_events"),selected = "Revenue", inline = FALSE)
+      } 
+    })
+    uiOutput("filter3")
+
+    output$filter2 <- renderUI({
+      if(input$Q3 == "Marketing Channel"){
+        label = "Release"
+        radioButtons("Release", label, choices = c(levels(factor(q3$Release)),"Both"),selected = "Both", inline = FALSE)
+      } 
+    })
+    uiOutput("filter2")
+    
+    output$filter5 <- renderUI({
+      if(input$Q3 == "Marketing Channel"){
+        label = "Comments"
+        radioButtons("Comments", label, choices = c(levels(factor(q3$Comments)),"All"),selected = "All", inline = FALSE)
+      } 
+    })
+    uiOutput("filter5")
+```
+
+Column {data-height=700}
+-----------------------------------------------------------------------
+
+### Plots
+
+```{r}
+output$a1 <- renderPlotly({
+  if (input$Q3 == "Marketing Channel"){
+    plotdata32 <- q3
+  }
+  if (input$Q3 == "Marketing Channel" && input$C  != "All"){
+    plotdata32 <- plotdata32 %>% filter(Marketing_Channel %in% input$C)
+  }
+  if (input$Q3 == "Marketing Channel" && input$Release  != "Both"){
+    plotdata32 <- plotdata32 %>% filter(Release %in% input$Release)
+  }
+  if (input$Q3 == "Marketing Channel" && input$Comments  != "All"){
+    plotdata32 <- plotdata32 %>% filter(Comments %in% input$Comments)
+  }
+  if (input$Q3 == "Marketing Channel"){
+    req(input$KPI21)
+    ggplotly(ggplot(data = plotdata32,aes(x=Date,y=plotdata32[[input$KPI21]],color=Release))+facet_wrap(Marketing_Channel~Interaction_Type)+geom_line(size=0.2)+theme(legend.position = "none")+theme(axis.text.x = element_blank()))
+  }
+})
+plotlyOutput("a1")
+```
+
+Column {data-height=700}
+-----------------------------------------------------------------------
+
+### Assumptions, Insights and Recommendations
+
+```{r}
+
+```
